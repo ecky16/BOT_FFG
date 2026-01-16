@@ -15,7 +15,15 @@ export default async function handler(req, res) {
     await fetch(`${GAS}?action=add_sub&chat_id=${chatId}&username=${msg.from.username||""}&name=${msg.from.first_name||""}`);
     await send(BOT, chatId, "✅ Kamu terdaftar.\nInfo akan dikirim otomatis.");
   }
+if (text.startsWith("/daftar")) {
+  const chatId = msg.chat.id;
+  const title = msg.chat.title || "";
+  const u = msg.from?.username || "";
+  const n = msg.from?.first_name || "";
 
+  await fetch(`${GAS}?action=add_sub&chat_id=${encodeURIComponent(chatId)}&username=${encodeURIComponent(u)}&name=${encodeURIComponent(title || n)}`);
+  await send(BOT, chatId, "✅ Grup ini sudah terdaftar. Nanti broadcast dari Spreadsheet bakal masuk sini.");
+}
   // TEST
   if (text === "/pvt") {
     const report = await buildReport(GAS);
@@ -51,12 +59,4 @@ function ascii(h,r){
   return [L,R(h),L,...r.map(R),L].join("\n");
 }
 
-if (text.startsWith("/daftar")) {
-  const chatId = msg.chat.id;
-  const title = msg.chat.title || "";
-  const u = msg.from?.username || "";
-  const n = msg.from?.first_name || "";
 
-  await fetch(`${GAS}?action=add_sub&chat_id=${encodeURIComponent(chatId)}&username=${encodeURIComponent(u)}&name=${encodeURIComponent(title || n)}`);
-  await send(BOT, chatId, "✅ Grup ini sudah terdaftar. Nanti broadcast dari Spreadsheet bakal masuk sini.");
-}
