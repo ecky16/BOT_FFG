@@ -1,91 +1,52 @@
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(200).send("ok");
+  const BOT = process.env.BOT_TOKEN;
+  const GAS = process.env.GAS_API_URL;
 
-  const BOT_TOKEN = process.env.BOT_TOKEN;
-  const GAS_API_URL = process.env.GAS_API_URL;
+  if (req.method !== "POST") return res.send("ok");
 
-  // (opsional tapi bagus) verifikasi secret token dari Telegram
-  const SECRET = process.env.TG_WEBHOOK_SECRET;
-  if (SECRET) {
-    const incoming = req.headers["x-telegram-bot-api-secret-token"];
-    if (incoming !== SECRET) return res.status(401).send("unauthorized");
+  const msg = req.body.message;
+  if (!msg) return res.send("ok");
+
+  const chatId = msg.chat.id;
+  const text = (msg.text || "").trim();
+
+  // REGISTER
+  if (text === "/start") {
+    await fetch(`${GAS}?action=add_sub&chat_id=${chatId}&username=${msg.from.username||""}&name=${msg.from.first_name||""}`);
+    await send(BOT, chatId, "✅ Kamu terdaftar.\nInfo akan dikirim otomatis.");
   }
 
-  const update = req.body;
-  const msg = update?.message;
-  const text = (msg?.text || "").trim();
-  const chatId = msg?.chat?.id;
-
-  // Simpan subscriber paling gampang: pakai Google Sheet juga (opsi paling simpel)
-  // Tapi versi ultra sederhana: begitu /start, langsung balas OK.
-  if (text === "/start" && chatId) {
-    await sendMessage(BOT_TOKEN, chatId,
-      "Sip ✅ Kamu sudah terdaftar.\nNanti kalau admin kirim update dari Spreadsheet, kamu bakal nerima.",
-      "HTML"
-    );
-    return res.status(200).send("ok");
+  // TEST
+  if (text === "/pvt") {
+    const report = await buildReport(GAS);
+    await send(BOT, chatId, report);
   }
 
-  // Command buat test tarik data
-  if (text === "/pvt" && chatId) {
-    const report = await buildReportFromGAS(GAS_API_URL);
-    await sendMessage(BOT_TOKEN, chatId, report, "HTML");
-    return res.status(200).send("ok");
-  }
-
-  return res.status(200).send("ok");
+  res.send("ok");
 }
 
-async function buildReportFromGAS(gasUrl) {
-  const r = await fetch(`${gasUrl}?action=pvt`);
+async function buildReport(api) {
+  const r = await fetch(`${api}?action=get_pvt`);
   const j = await r.json();
 
-  if (!j.ok) return `<b>HASIL UKUR FFG BGES</b>\n<pre>Gagal ambil data: ${escapeHtml(String(j.error || ""))}</pre>`;
-  const rows = j.rows || [];
-  if (!rows.length) return `<b>HASIL UKUR FFG BGES</b>\n<pre>(Data kosong)</pre>`;
+  if (!j.rows.length) return "<b>HASIL UKUR FFG BGES</b>\n<pre>(Kosong)</pre>";
 
-  const headers = ["A","B","C","D","E","F","G"];
-  const table = asciiTable(headers, rows.map(r=>r.map(v => v==null? "" : String(v))));
-
-  const stamp = new Date().toLocaleString("id-ID");
-  return `<b>HASIL UKUR FFG BGES</b>\n<i>Update: ${escapeHtml(stamp)}</i>\n<pre>${escapeHtml(table)}</pre>`;
+  const table = ascii(["A","B","C","D","E","F","G"], j.rows);
+  return `<b>HASIL UKUR FFG BGES</b>\n<pre>${table}</pre>`;
 }
 
-async function sendMessage(token, chatId, text, parseMode="HTML") {
-  const url = `https://api.telegram.org/bot${token}/sendMessage`;
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: parseMode })
+async function send(token, chat, text) {
+  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method:"POST",
+    headers:{ "content-type":"application/json" },
+    body:JSON.stringify({ chat_id:chat, text, parse_mode:"HTML" })
   });
-  const j = await resp.json();
-  if (!j.ok) throw new Error(JSON.stringify(j));
 }
 
-function asciiTable(headers, rows) {
-  const maxWidth = 22;
-  const widths = headers.map(h => Math.min(maxWidth, h.length));
-
-  for (const r of rows) {
-    for (let i=0;i<headers.length;i++){
-      const s = (r[i] ?? "").toString();
-      widths[i] = Math.min(maxWidth, Math.max(widths[i], s.length));
-    }
-  }
-
-  const line = "+" + widths.map(w => "-".repeat(w+2)).join("+") + "+";
-  const fmt = (arr) => "|" + arr.map((v,i)=>{
-    const s = (v ?? "").toString();
-    const cut = s.length>widths[i] ? s.slice(0,widths[i]-1)+"…" : s;
-    return " " + cut.padEnd(widths[i]," ") + " ";
-  }).join("|") + "|";
-
-  const out = [line, fmt(headers), line];
-  rows.forEach(r=>out.push(fmt(r)));
-  out.push(line);
-  return out.join("\n");
-}
-
-function escapeHtml(s){
-  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+function ascii(h,r){
+  const w=h.map(x=>x.length);
+  r.forEach(a=>a.forEach((v,i)=>w[i]=Math.max(w[i],String(v).length)));
+  const L="+"+w.map(x=>"-".repeat(x+2)).join("+")+"+";
+  const R=a=>"|"+a.map((v,i)=>" "+String(v).padEnd(w[i])+" ").join("|")+"|";
+  return [L,R(h),L,...r.map(R),L].join("\n");
 }
